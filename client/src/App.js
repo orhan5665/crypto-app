@@ -1,45 +1,67 @@
-// src/App.js
-import Auth from './auth';
-import React from 'react';
+// src/App.js - DÜZELTİLMİŞ TAM KOD
+
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { auth, db } from './firebase'; 
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
 
+// Gerekli tüm bileşenleri import et
+import Auth from './auth';
 import ChartComponent from './ChartComponent';
 import EditorComponent from './EditorComponent';
+import SettingsModal from './SettingsModal';
 import './App.css';
 
 function App() {
-  const [symbol, setSymbol] = React.useState('BTCUSDT');
-  const [interval, setInterval] = React.useState('1h');
-  const [code, setCode] = React.useState(`// YENİ İNDİKATÖRLER: candle.rsi ve candle.sma20
-// RSI 30'un altına düştüğünde ve fiyat 20'lik ortalamanın üzerindeyken AL.
-// RSI 70'in üzerine çıktığında SAT.
+  // Tüm state tanımlamaları
+  const [symbol, setSymbol] = useState('BTCUSDT');
+  const [interval, setInterval] = useState('1h');
+  const [code, setCode] = useState(`// SUPERTREND STRATEJİSİ
+// Fiyat Supertrend çizgisini yukarı kırdığında AL, aşağı kırdığında SAT.
 
-if (candle.rsi < 30 && candle.close > candle.sma20) {
-  buy(index);
-} else if (candle.rsi > 70) {
-  sell(index);
-}`
-  );
+// Gerekli verilerin (supertrend objesi ve içindeki value) mevcut olduğundan emin ol
+if (candle.supertrend && candle.supertrend.value && prevCandle.supertrend && prevCandle.supertrend.value) {
+  const currentClose = candle.close;
+  const currentSupertrend = candle.supertrend.value; // .value'yu kullan
+  const prevClose = prevCandle.close;
+  const prevSupertrend = prevCandle.supertrend.value; // .value'yu kullan
+
+  // Alım Sinyali (Kırılım)
+  if (prevClose < prevSupertrend && currentClose > currentSupertrend) {
+    buy(index);
+  }
   
-  const [chartData, setChartData] = React.useState([]);
-  const [testResults, setTestResults] = React.useState(null); // BU SATIR EKSİKTİ
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [error, setError] = React.useState('');
+  // Satım Sinyali (Kırılım)
+  else if (prevClose > prevSupertrend && currentClose < currentSupertrend) {
+    sell(index);
+  }
+}`);
+  const [chartData, setChartData] = useState([]);
+  const [testResults, setTestResults] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [user, setUser] = useState(null);
+  const [savedStrategies, setSavedStrategies] = useState([]);
+  
+  const [strategyParams, setStrategyParams] = useState({
+    initialBalance: 10000,
+    rsiPeriod: 14,
+    smaPeriod: 20,
+  });
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTableVisible, setIsTableVisible] = useState(false);
 
-  const [user, setUser] = React.useState(null);
-  const [savedStrategies, setSavedStrategies] = React.useState([]);
-
-  React.useEffect(() => {
+  // Kimlik doğrulama için Effect
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
     return () => unsubscribe();
   }, []);
 
-  React.useEffect(() => {
+  // Kaydedilmiş stratejileri çekmek için Effect
+  useEffect(() => {
     const fetchStrategies = async () => {
       if (user) {
         const q = query(collection(db, "strategies"), where("userId", "==", user.uid));
@@ -53,7 +75,8 @@ if (candle.rsi < 30 && candle.close > candle.sma20) {
     fetchStrategies();
   }, [user]);
 
-  React.useEffect(() => {
+  // Mum verilerini çekmek için Effect
+  useEffect(() => {
     setIsLoading(true);
     setTestResults(null);
     axios.get(`http://localhost:5000/api/candles?symbol=${symbol}&interval=${interval}`)
@@ -68,18 +91,20 @@ if (candle.rsi < 30 && candle.close > candle.sma20) {
       });
   }, [symbol, interval]);
 
+  // Strateji kaydetme fonksiyonu
   const handleSave = async () => {
     if (!user) {
       alert("Stratejinizi kaydetmek için lütfen giriş yapın.");
       return;
     }
-    const strategyName = prompt("Lütfen stratejiniz için bir isim girin:");
+    const strategyName = prompt("Stratejiniz için bir isim girin:");
     if (strategyName) {
       try {
         await addDoc(collection(db, "strategies"), {
           userId: user.uid,
           name: strategyName,
           code: code,
+          params: strategyParams,
           createdAt: new Date()
         });
         alert(`'${strategyName}' başarıyla kaydedildi!`);
@@ -93,21 +118,29 @@ if (candle.rsi < 30 && candle.close > candle.sma20) {
     }
   };
   
+  // Kaydedilmiş stratejiyi yükleme fonksiyonu
   const handleLoadStrategy = (strategyId) => {
     if (!strategyId) return;
     const strategyToLoad = savedStrategies.find(s => s.id === strategyId);
     if (strategyToLoad) {
       setCode(strategyToLoad.code);
+      if (strategyToLoad.params) {
+        setStrategyParams(strategyToLoad.params);
+      } else {
+        setStrategyParams({ initialBalance: 10000, rsiPeriod: 14, smaPeriod: 20 });
+      }
     }
   };
 
+  // Backtest çalıştırma fonksiyonu
   const handleBacktest = async () => {
     setError('');
     setTestResults(null);
     try {
       const response = await axios.post('http://localhost:5000/api/backtest', {
         code: code,
-        data: chartData
+        data: chartData,
+        params: strategyParams
       });
       if (response.data.success) {
         setTestResults(response.data);
@@ -121,26 +154,33 @@ if (candle.rsi < 30 && candle.close > candle.sma20) {
 
   return (
     <div className="App">
-    
-<header className="App-header">
-  <h1>Crypto Strateji Test Platformu</h1>
-  <div className="auth-buttons">
-    {user ? (
-      <>
-        <span>Hoşgeldin, {user.email}</span>
-        <button onClick={() => auth.signOut()}>Çıkış Yap</button>
-      </>
-    ) : (
-      <Auth /> // "Giriş Yapılmadı" yazısı yerine artık bu bileşen gelecek
-    )}
-  </div>
-</header>
+      {isModalOpen && (
+        <SettingsModal 
+          initialParams={strategyParams}
+          onSave={setStrategyParams}
+          onClose={() => setIsModalOpen(false)}
+        />
+      )}
+      
+      <header className="App-header">
+        <h1>Crypto Strateji Test Platformu</h1>
+        <div className="auth-buttons">
+          {user ? (
+            <>
+              <span>Hoşgeldin, {user.email}</span>
+              <button onClick={() => auth.signOut()}>Çıkış Yap</button>
+            </>
+          ) : (
+            <Auth />
+          )}
+        </div>
+      </header>
       
       {user && savedStrategies.length > 0 && (
         <div className="strategy-loader">
           <label>
             Kaydedilmiş Stratejiyi Yükle:
-            <select onChange={(e) => handleLoadStrategy(e.target.value)}>
+            <select onChange={(e) => handleLoadStrategy(e.target.value)} value="">
               <option value="">Strateji Seçin...</option>
               {savedStrategies.map(strategy => (
                 <option key={strategy.id} value={strategy.id}>
@@ -174,7 +214,13 @@ if (candle.rsi < 30 && candle.close > candle.sma20) {
       </div>
 
       <div className="chart-container">
-        {isLoading ? <div>Yükleniyor...</div> : <ChartComponent symbol={symbol} interval={interval} chartData={chartData} testResults={testResults} />}
+        {isLoading ? <div>Loading...</div> : <ChartComponent 
+          symbol={symbol} 
+          interval={interval} 
+          chartData={chartData} 
+          testResults={testResults}
+          onSettingsClick={() => setIsModalOpen(true)}
+        />}
       </div>
 
       <div className="editor-container">
@@ -188,57 +234,58 @@ if (candle.rsi < 30 && candle.close > candle.sma20) {
 
       {error && <div className="results error">{error}</div>}
       
-{testResults && (
-  <div className="results">
-    <h3>Test Sonuçları</h3>
-    {/* Gelişmiş Metrikler Paneli */}
-    <div className="results-grid">
-      <div><strong>Başlangıç Bakiyesi:</strong> ${testResults.initialBalance.toLocaleString()}</div>
-      <div><strong>Son Bakiye:</strong> ${testResults.finalBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-      <div style={{ color: testResults.pnl >= 0 ? 'green' : 'red' }}>
-        <strong>Toplam Kar/Zarar:</strong> ${testResults.pnl.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-      </div>
-      <div style={{ color: testResults.returnPercentage >= 0 ? 'green' : 'red' }}>
-        <strong>Getiri:</strong> {(testResults.returnPercentage || 0).toFixed(2)}%
-      </div>
-      <div><strong>Toplam İşlem:</strong> {testResults.totalTrades}</div>
-      <div><strong>Kazanma Oranı:</strong> {(testResults.winRate || 0).toFixed(2)}%</div>
-      <div><strong>Kar Faktörü:</strong> {(testResults.profitFactor || 0).toFixed(2)}</div>
-      <div style={{ color: 'red' }}>
-        <strong>Maks. Düşüş:</strong> {(testResults.maxDrawdown || 0).toFixed(2)}%
-      </div>
-    </div>
+      {testResults && (
+        <div className="results">
+          <h3>Test Sonuçları</h3>
+          <div className="results-grid">
+            <div><strong>Başlangıç Bakiyesi:</strong> ${testResults.initialBalance.toLocaleString()}</div>
+            <div><strong>Son Bakiye:</strong> ${testResults.finalBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            <div style={{ color: testResults.pnl >= 0 ? 'green' : 'red' }}>
+              <strong>Toplam Kar/Zarar:</strong> ${testResults.pnl.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+            </div>
+            <div style={{ color: testResults.returnPercentage >= 0 ? 'green' : 'red' }}>
+              <strong>Getiri:</strong> {(testResults.returnPercentage || 0).toFixed(2)}%
+            </div>
+            <div><strong>Toplam İşlem:</strong> {testResults.totalTrades}</div>
+            <div><strong>Kazanma Oranı:</strong> {(testResults.winRate || 0).toFixed(2)}%</div>
+            <div><strong>Kar Faktörü:</strong> {(testResults.profitFactor || 0).toFixed(2)}</div>
+            <div style={{ color: 'red' }}>
+              <strong>Maks. Düşüş:</strong> {(testResults.maxDrawdown || 0).toFixed(2)}%
+            </div>
+          </div>
 
-    {/* Detaylı İşlem Tablosu */}
-    {testResults.trades.length > 0 && (
-      <div className="trades-table-container">
-        <h4>İşlem Detayları</h4>
-        <table>
-          <thead>
-            <tr>
-              <th>Giriş Fiyatı</th>
-              <th>Çıkış Fiyatı</th>
-              <th>Kar/Zarar ($)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {testResults.trades.map((trade, index) => (
-              <tr key={index}>
-                <td>{(trade.entryPrice || 0).toFixed(2)}</td>
-                <td>{(trade.exitPrice || 0).toFixed(2)}</td>
-                <td style={{ color: trade.profit >= 0 ? 'green' : 'red' }}>
-                  {(trade.profit || 0).toFixed(2)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )}
-  </div>
-)}
+          <button onClick={() => setIsTableVisible(!isTableVisible)} className="toggle-details-btn">
+            {isTableVisible ? 'İşlem Detaylarını Gizle' : 'İşlem Detaylarını Göster'}
+          </button>
+          {isTableVisible && testResults.trades.length > 0 && (
+            <div className="trades-table-container">
+              <h4>İşlem Detayları</h4>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Giriş Fiyatı</th>
+                    <th>Çıkış Fiyatı</th>
+                    <th>Kar/Zarar ($)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {testResults.trades.map((trade, index) => (
+                    <tr key={index}>
+                      <td>{(trade.entryPrice || 0).toFixed(2)}</td>
+                      <td>{(trade.exitPrice || 0).toFixed(2)}</td>
+                      <td style={{ color: trade.profit >= 0 ? 'green' : 'red' }}>
+                        {(trade.profit || 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-export default App; // BU SATIR EKSİKTİ
+export default App;

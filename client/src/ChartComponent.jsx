@@ -1,11 +1,15 @@
-// src/ChartComponent.jsx
+// src/ChartComponent.jsx - DÜZELTİLMİŞ TAM KOD
 
 import React, { useMemo } from 'react';
 import Highcharts from 'highcharts/highstock';
 import HighchartsReact from 'highcharts-react-official';
+import stockModule from 'highcharts/modules/stock';
 
-const ChartComponent = ({ symbol, interval, chartData, testResults }) => {
-  // YENİ: 'flagData' yerine 'buySignals' ve 'sellSignals' hesaplayan mantık
+// Bu satır, Highcharts'a 'candlestick' serisini öğretir.
+
+
+const ChartComponent = ({ symbol, interval, chartData, testResults, onSettingsClick }) => {
+  
   const { buySignals, sellSignals } = useMemo(() => {
     if (!testResults || !testResults.trades) {
       return { buySignals: [], sellSignals: [] };
@@ -14,24 +18,21 @@ const ChartComponent = ({ symbol, interval, chartData, testResults }) => {
     const buys = [];
     const sells = [];
 
-    // Her bir tamamlanmış işlemi (al-sat döngüsü) döngüye al
     testResults.trades.forEach(trade => {
       const buyCandle = chartData[trade.entryIndex];
       const sellCandle = chartData[trade.exitIndex];
 
-      // Alım sinyalini mumun altına yerleştir
       if (buyCandle) {
         buys.push({
           x: buyCandle.time,
-          y: buyCandle.low * 0.995, // Mumun en düşüğünün biraz altına
+          y: buyCandle.low * 0.995,
         });
       }
       
-      // Satım sinyalini mumun üzerine yerleştir
       if (sellCandle) {
         sells.push({
           x: sellCandle.time,
-          y: sellCandle.high * 1.005, // Mumun en yükseğinin biraz üzerine
+          y: sellCandle.high * 1.005,
         });
       }
     });
@@ -55,39 +56,33 @@ const ChartComponent = ({ symbol, interval, chartData, testResults }) => {
         name: symbol,
         data: chartData.map(d => [d.time, d.open, d.high, d.low, d.close]),
       },
-      // YENİ: Alım sinyalleri için scatter serisi
       {
         type: 'scatter',
         name: 'Alım Sinyalleri',
         data: buySignals,
         onSeries: symbol,
         marker: {
-          symbol: 'triangle', // Yukarı ok sembolü
-          fillColor: '#4CAF50', // Yeşil
+          symbol: 'triangle',
+          fillColor: '#4CAF50',
           lineWidth: 1,
-          lineColor: '#388E3C', // Koyu yeşil çerçeve
+          lineColor: '#388E3C',
           radius: 7
         },
-        tooltip: {
-            pointFormat: 'Alım Sinyali'
-        }
+        tooltip: { pointFormat: 'Alım Sinyali' }
       },
-      // YENİ: Satım sinyalleri için scatter serisi
       {
         type: 'scatter',
         name: 'Satım Sinyalleri',
         data: sellSignals,
         onSeries: symbol,
         marker: {
-          symbol: 'triangle-down', // Aşağı ok sembolü
-          fillColor: '#F44336', // Kırmızı
+          symbol: 'triangle-down',
+          fillColor: '#F44336',
           lineWidth: 1,
-          lineColor: '#D32F2F', // Koyu kırmızı çerçeve
+          lineColor: '#D32F2F',
           radius: 7
         },
-        tooltip: {
-            pointFormat: 'Satım Sinyali'
-        }
+        tooltip: { pointFormat: 'Satım Sinyali' }
       }
     ]
   };
@@ -97,11 +92,18 @@ const ChartComponent = ({ symbol, interval, chartData, testResults }) => {
   }
 
   return (
-    <HighchartsReact
-      highcharts={Highcharts}
-      constructorType={'stockChart'}
-      options={options}
-    />
+    <div style={{ position: 'relative' }}>
+      <div className="chart-toolbar">
+        <button onClick={onSettingsClick} className="settings-btn">
+          ⚙️ Ayarlar
+        </button>
+      </div>
+      <HighchartsReact
+        highcharts={Highcharts}
+        constructorType={'stockChart'}
+        options={options}
+      />
+    </div>
   );
 };
 
